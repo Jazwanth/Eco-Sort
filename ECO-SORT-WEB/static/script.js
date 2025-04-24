@@ -160,13 +160,27 @@ openCameraBtn.addEventListener('click', openCameraForThumbnail);
 changePictureBtn.addEventListener('click', openCameraForThumbnail);
 
 
-// Capture thumbnail
+// Capture thumbnail and full image
 captureBtn.addEventListener('click', function() {
     if (!cameraStream) return;
+    // Full-size image (from video) at native resolution
+    const fullCanvas = document.createElement('canvas');
+    const vw = cameraPreview.videoWidth;
+    const vh = cameraPreview.videoHeight;
+    fullCanvas.width = vw > 0 ? vw : 1280;
+    fullCanvas.height = vh > 0 ? vh : 720;
+    const fullCtx = fullCanvas.getContext('2d');
+    fullCtx.imageSmoothingEnabled = true;
+    fullCtx.imageSmoothingQuality = 'high';
+    fullCtx.drawImage(cameraPreview, 0, 0, fullCanvas.width, fullCanvas.height);
+    currentFullImage = fullCanvas.toDataURL('image/png');
+    // Thumbnail (64x64)
     const canvas = document.createElement('canvas');
     canvas.width = 64;
     canvas.height = 64;
     const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(cameraPreview, 0, 0, 64, 64);
     const dataUrl = canvas.toDataURL('image/png');
     thumbnailImg.src = dataUrl;
@@ -198,6 +212,7 @@ map.addLayer(drawnItems);
 
 let currentPolygon = null;
 let currentThumbnail = null; // Store base64 thumbnail for current area
+let currentFullImage = null; // Store full-size base64 image for current area
 
 // Initialize draw control
 const drawControl = new L.Control.Draw({
@@ -233,7 +248,7 @@ map.on(L.Draw.Event.CREATED, function(e) {
     }
 });
 
-// Save area with name, color, and thumbnail
+// Save area with name, color, thumbnail, and full image
 saveAreaBtn.addEventListener('click', function() {
     if (!currentPolygon) return;
     const name = document.getElementById('areaName').value || 'Unnamed Area';
@@ -247,10 +262,11 @@ saveAreaBtn.addEventListener('click', function() {
         dashArray: '6, 4',
         className: 'custom-area-polygon'
     });
-    // Store thumbnail in polygon instance for later saving
+    // Store thumbnail and full image in polygon instance for later saving
     currentPolygon.thumbnail = currentThumbnail;
+    currentPolygon.fullImage = currentFullImage;
     // Add popup with name, thumbnail, and edit/delete controls
-    let thumbHtml = currentThumbnail ? `<img src='${currentThumbnail}' style='width:48px;height:48px;border-radius:6px;object-fit:cover;margin-bottom:6px;'><br>` : '';
+    let thumbHtml = currentThumbnail ? `<img src='${currentThumbnail}' class='popup-thumbnail' style='width:48px;height:48px;border-radius:6px;object-fit:cover;margin-bottom:6px;cursor:pointer;'><br>` : '';
     currentPolygon.bindPopup(`
         <b>${name}</b><br>
         ${thumbHtml}
@@ -262,10 +278,12 @@ saveAreaBtn.addEventListener('click', function() {
     // Reset UI
     areaProperties.style.display = 'none';
     document.getElementById('areaName').value = '';
-    thumbnailImg.style.display = 'block';
-    changePictureBtn.style.display = 'inline-block';
-    removePictureBtn.style.display = 'inline-block';
+    thumbnailImg.style.display = 'none';
+    thumbnailImg.src = '';
+    changePictureBtn.style.display = 'none';
+    removePictureBtn.style.display = 'none';
     currentThumbnail = null;
+    currentFullImage = null;
     currentPolygon = null;
 });
 
@@ -273,6 +291,23 @@ saveAreaBtn.addEventListener('click', function() {
 map.on('popupopen', function(e) {
     const layer = e.popup._source;
     const popupContent = e.popup.getContent();
+    // Thumbnail click handler (full image modal)
+    const thumbImg = e.popup._contentNode.querySelector('.popup-thumbnail');
+    if (thumbImg) {
+        thumbImg.onclick = function() {
+            const modal = document.getElementById('imageModal');
+            const modalImg = document.getElementById('modalImg');
+            // Try to get the full image from the polygon's data
+            let fullImgSrc = null;
+            if (layer && layer.fullImage) {
+                fullImgSrc = layer.fullImage;
+            } else {
+                fullImgSrc = thumbImg.src;
+            }
+            modalImg.src = fullImgSrc;
+            modal.style.display = 'flex';
+        };
+    }
     // Edit shape
     const editBtn = e.popup._contentNode.querySelector('.edit-shape-btn');
     if (editBtn) {
@@ -353,6 +388,25 @@ map.on(L.Draw.Event.CREATED, function(e) {
 // Drawing tools
 let drawnItems2 = new L.FeatureGroup();
 map.addLayer(drawnItems2);
+
+// Modal logic for full-size image
+const imageModal = document.getElementById('imageModal');
+const modalImg = document.getElementById('modalImg');
+if (imageModal && modalImg) {
+    imageModal.addEventListener('click', function(e) {
+        if (e.target === imageModal) {
+            imageModal.style.display = 'none';
+            modalImg.src = '';
+        }
+    });
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            imageModal.style.display = 'none';
+            modalImg.src = '';
+        }
+    });
+}
+
 
 // Initialize drawing control
 const drawControl2 = new L.Control.Draw({
